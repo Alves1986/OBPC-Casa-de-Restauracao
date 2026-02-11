@@ -1,0 +1,7 @@
+{
+  "name": "Hub Digital OBPC Casa de Restauração",
+  "description": "Uma plataforma eclesiástica moderna servindo como a porta da frente digital da OBPC em Telêmaco Borba, integrando agenda inteligente e recursos para membros.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
