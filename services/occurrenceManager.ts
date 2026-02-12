@@ -1,78 +1,82 @@
 
-import { RRule, rrulestr } from 'rrule';
+import { rrulestr } from 'rrule';
+import { ChurchEvent, EventOccurrence, EventException } from '../types';
 
-/**
- * Motor de Sincronização de Ocorrências (OccurrenceManager)
- * 
- * Por que esta classe existe?
- * Calcular recorrências (RRULE) em tempo real no cliente é caro em termos de CPU.
- * Esta lógica roda no servidor para "materializar" as datas no banco.
- */
 export class OccurrenceManager {
   /**
-   * Sincroniza as ocorrências de um evento para os próximos 12 meses.
+   * Expande eventos (recorrentes ou não) em ocorrências reais dentro de um intervalo.
    */
-  static async syncEvent(eventId: string, prisma: any) {
-    const event = await prisma.event.findUnique({
-      where: { id: eventId },
-      include: { exceptions: true }
-    });
+  static expand(
+    events: ChurchEvent[], 
+    exceptions: EventException[], 
+    startRange: Date, 
+    endRange: Date
+  ): EventOccurrence[] {
+    const occurrences: EventOccurrence[] = [];
 
-    if (!event) return;
+    events.forEach(event => {
+      const eventStart = new Date(event.start_date);
+      const eventEnd = new Date(event.end_date);
+      const eventDuration = eventEnd.getTime() - eventStart.getTime();
+      
+      const eventExceptions = exceptions.filter(ex => ex.event_id === event.id);
 
-    // 1. Limpar ocorrências futuras para evitar duplicatas
-    await prisma.eventOccurrence.deleteMany({
-      where: { 
-        eventId,
-        occurrenceDate: { gte: new Date() }
+      if (event.is_recurring && event.rrule) {
+        try {
+          const rule = rrulestr(event.rrule, { dtstart: eventStart });
+          const dates = rule.between(startRange, endRange, true);
+
+          dates.forEach(occDate => {
+            // Verificar se existe uma exceção para esta data específica
+            const exception = eventExceptions.find(ex => 
+              this.isSameDay(new Date(ex.original_date), occDate)
+            );
+
+            if (exception?.is_cancelled) return;
+
+            const finalStart = exception?.rescheduled_to 
+              ? new Date(exception.rescheduled_to) 
+              : occDate;
+            
+            occurrences.push({
+              id: event.id,
+              title: event.title,
+              description: event.description,
+              occurrence_date: occDate,
+              start_time: finalStart,
+              end_time: new Date(finalStart.getTime() + eventDuration),
+              ministry_id: event.ministry_id,
+              color: event.color
+            });
+          });
+        } catch (e) {
+          console.error(`Erro ao processar RRULE para evento: ${event.title}`, e);
+        }
+      } else {
+        // Evento único
+        if (eventStart >= startRange && eventStart <= endRange) {
+          occurrences.push({
+            id: event.id,
+            title: event.title,
+            description: event.description,
+            occurrence_date: eventStart,
+            start_time: eventStart,
+            end_time: eventEnd,
+            ministry_id: event.ministry_id,
+            color: event.color
+          });
+        }
       }
     });
 
-    // 2. Se não for recorrente, cria apenas uma ocorrência
-    if (!event.isRecurring || !event.rrule) {
-      await prisma.eventOccurrence.create({
-        data: {
-          eventId,
-          occurrenceDate: this.normalizeDate(event.startTime),
-          startTime: event.startTime,
-          endTime: event.endTime
-        }
-      });
-      return;
-    }
-
-    // 3. Gerar datas via RRULE
-    const rule = rrulestr(event.rrule, { dtstart: event.startTime });
-    const now = new Date();
-    const oneYearFromNow = new Date();
-    oneYearFromNow.setFullYear(now.getFullYear() + 1);
-
-    const dates = rule.between(now, oneYearFromNow, true);
-
-    // 4. Mapear ocorrências respeitando exceções
-    const occurrences = dates.map(date => {
-      const exception = event.exceptions.find(ex => 
-        this.normalizeDate(ex.originalDate).getTime() === this.normalizeDate(date).getTime()
-      );
-
-      if (exception?.isCancelled) return null;
-
-      return {
-        eventId,
-        occurrenceDate: this.normalizeDate(date),
-        startTime: exception?.rescheduledTo || date,
-        // Mantém a duração original se não houver nova data de fim na exceção
-        endTime: new Date(date.getTime() + (event.endTime.getTime() - event.startTime.getTime()))
-      };
-    }).filter(Boolean);
-
-    // 5. Batch insert para performance
-    await prisma.eventOccurrence.createMany({ data: occurrences });
+    return occurrences.sort((a, b) => a.start_time.getTime() - b.start_time.getTime());
   }
 
-  private static normalizeDate(date: Date): Date {
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    return d;
+  private static isSameDay(d1: Date, d2: Date): boolean {
+    return (
+      d1.getUTCFullYear() === d2.getUTCFullYear() &&
+      d1.getUTCMonth() === d2.getUTCMonth() &&
+      d1.getUTCDate() === d2.getUTCDate()
+    );
   }
 }
