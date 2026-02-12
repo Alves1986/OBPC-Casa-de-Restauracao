@@ -1,14 +1,21 @@
-
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Ministry } from '../types';
 
 export const ministryService = {
-  async getAll(): Promise<Ministry[]> {
-    const { data, error } = await supabase
-      .from('ministries')
-      .select('*');
+  async getAll(): Promise<{ data: Ministry[]; error: any }> {
+    if (!isSupabaseConfigured || !supabase) {
+      return { data: [], error: 'Configuração do Supabase ausente' };
+    }
 
-    if (error) throw error;
-    return data || [];
+    try {
+      const { data, error } = await supabase
+        .from('ministries')
+        .select('*');
+
+      if (error) return { data: [], error };
+      return { data: data || [], error: null };
+    } catch (err) {
+      return { data: [], error: err };
+    }
   }
 };

@@ -1,10 +1,10 @@
-
 import React, { useEffect, Suspense } from 'react';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import AgendaSection from './components/AgendaSection';
 import ExpectationSection from './components/ExpectationSection';
 import Footer from './components/Footer';
+import { isSupabaseConfigured } from './lib/supabase';
 
 // Otimização: Componente de Loading Skeleton para a Agenda
 const AgendaSkeleton = () => (
@@ -34,6 +34,13 @@ function App() {
 
   return (
     <div className="flex flex-col min-h-screen selection:bg-church-gold selection:text-church-blue">
+      {/* Diagnóstico Visível de Configuração */}
+      {!isSupabaseConfigured && (
+        <div className="bg-red-600 text-white p-2 text-center text-xs font-bold sticky top-0 z-[100] animate-bounce">
+          CONFIGURAÇÃO SUPABASE AUSENTE - VERIFIQUE AS VARIÁVEIS VITE_ NO PAINEL DE CONTROLE
+        </div>
+      )}
+
       {/* Camada de Acessibilidade: Skip to Content */}
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-church-gold text-church-blue px-4 py-2 rounded-md font-bold z-[100]">
         Pular para o conteúdo
